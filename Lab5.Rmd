@@ -432,4 +432,16 @@ head(salida_nb, 15)
 ```
 El modelo de clasificación Naive Bayes obtuvo una exactitud de 53.74%, con precisión macro de 57.08%, recall macro de 56.02% y F1 macro de 53.47%. Estos resultados indican un desempeño moderado, pero no sobresaliente. La matriz de confusión muestra que el modelo clasifica mejor las viviendas baratas que las medias y caras. En particular, muchas observaciones de la categoría media fueron clasificadas como baratas, y varias viviendas caras fueron clasificadas como medias. Esto sugiere que el modelo tiene dificultades para separar correctamente las categorías intermedias, probablemente porque existe solapamiento entre las características de los distintos segmentos de precio. En conclusión, el modelo logra capturar parcialmente la estructura de las clases, pero su capacidad predictiva sigue siendo limitada.
 
+# 5:Utilice los modelos con el conjunto de prueba y determine la eficiencia del algoritmo para predecir y clasificar. 
+
+Para determinar la eficiencia del algoritmo en el conjunto de prueba, se evaluaron por separado el modelo de predicción y el modelo de clasificación.
+
+En el caso del modelo de predicción del precio, el desempeño fue bajo. Las métricas obtenidas fueron MAE = 362, RMSE = 2240 y R^2 =0.00666. Esto indica que el error promedio absoluto fue de 362 unidades monetarias y que el modelo prácticamente no explicó la variabilidad del precio. Además, la exactitud por rangos fue de 0.396, lo que confirma que el algoritmo tuvo dificultades para ubicar correctamente las propiedades en los distintos niveles de precio. En consecuencia, la eficiencia del algoritmo para predecir el valor exacto del alquiler fue baja.
+
+En el modelo de clasificación, donde la variable respuesta fue la categoría de precio (Barata, Media, Cara), el desempeño fue mejor que en predicción, aunque sigue siendo moderado. En el conjunto de prueba se obtuvo una accuracy de 0.5374, una precision macro de 0.5708, un recall macro de 0.5602 y una F1 macro de 0.5347. Esto significa que el modelo clasificó correctamente alrededor del 53.7% de las observaciones. La matriz de confusión mostró que el algoritmo identificó mejor la categoría Barata, mientras que presentó más errores en las categorías Media y Cara, especialmente confundiendo viviendas medias con baratas y viviendas caras con medias.
+
+En términos generales, se concluye que el algoritmo Naive Bayes fue poco eficiente para predecir el precio exacto, pero tuvo una eficiencia moderada para clasificar las viviendas en categorías de precio. Esto es consistente con la naturaleza del método, ya que Naive Bayes funciona mejor en problemas de clasificación que en problemas de regresión continua.
+
+
+
 
