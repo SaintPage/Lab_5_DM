@@ -275,4 +275,161 @@ resultados_nb <- tibble(
 head(resultados_nb, 15)
 ```
 
+# 4:Haga un modelo de clasificación, use la variable categórica que hizo con el precio de las casas (barata, media y cara) como variable respuesta. 
+
+```{r}
+listings <- listings %>%
+  clean_names()
+
+if ("price" %in% names(listings)) {
+  listings <- listings %>%
+    mutate(price = parse_money_clean(price))
+}
+
+if ("host_response_rate" %in% names(listings)) {
+  listings <- listings %>%
+    mutate(host_response_rate = parse_percent_clean(host_response_rate))
+}
+
+if ("host_acceptance_rate" %in% names(listings)) {
+  listings <- listings %>%
+    mutate(host_acceptance_rate = parse_percent_clean(host_acceptance_rate))
+}
+
+cols_fecha <- c("host_since", "first_review", "last_review", "last_scraped")
+cols_fecha <- cols_fecha[cols_fecha %in% names(listings)]
+
+if (length(cols_fecha) > 0) {
+  listings <- listings %>%
+    mutate(across(all_of(cols_fecha), ~ suppressWarnings(ymd(.x))))
+}
+
+listings <- listings %>%
+  select(where(~ !is.list(.x))) %>%
+  mutate(across(where(is.character), as.factor))
+
+summary(listings$price)
+```
+```{r categorías precio}
+listings <- listings %>%
+  mutate(
+    categoria_precio = case_when(
+      is.na(price) ~ NA_character_,
+      price <= 119 ~ "Barata",
+      price > 119 & price <= 323 ~ "Media",
+      price > 323 ~ "Cara"
+    )
+  )
+
+listings$categoria_precio <- factor(
+  listings$categoria_precio,
+  levels = c("Barata", "Media", "Cara")
+)
+```
+
+```{r}
+datos_clas <- listings %>%
+  filter(!is.na(categoria_precio)) %>%
+  select(-any_of(c("price", "log_price", "estimated_revenue_l365d")))
+
+dim(datos_clas)
+```
+```{r}
+set.seed(123)
+
+split_clas <- initial_split(
+  datos_clas,
+  prop = 0.80,
+  strata = categoria_precio
+)
+
+train_clas <- training(split_clas)
+test_clas  <- testing(split_clas)
+
+dim(train_clas)
+dim(test_clas)
+```
+
+```{r seleccionar-predictores}
+vars_modelo <- c(
+  "categoria_precio",
+  "accommodates",
+  "bathrooms",
+  "bedrooms",
+  "beds",
+  "room_type"
+)
+
+train_clas2 <- train_clas %>%
+  select(any_of(vars_modelo)) %>%
+  drop_na() %>%
+  as.data.frame()
+
+test_clas2 <- test_clas %>%
+  select(any_of(vars_modelo)) %>%
+  drop_na() %>%
+  as.data.frame()
+
+# asegurar que room_type sea factor y tenga los mismos niveles
+train_clas2$room_type <- as.factor(train_clas2$room_type)
+test_clas2$room_type  <- factor(test_clas2$room_type,
+                                levels = levels(train_clas2$room_type))
+
+table(train_clas2$categoria_precio)
+table(test_clas2$categoria_precio)
+```
+
+```{r entrenar-naive-bayes-clas}
+nb_clas <- naive_bayes(
+  categoria_precio ~ accommodates + bathrooms + bedrooms + beds + room_type,
+  data = train_clas2,
+  laplace = 1
+)
+
+nb_clas
+```
+
+```{r}
+pred_nb <- predict(nb_clas, newdata = test_clas2, type = "class")
+prob_nb <- predict(nb_clas, newdata = test_clas2, type = "prob")
+
+head(pred_nb)
+head(prob_nb)
+```
+```{r metricas-clasificacion}
+accuracy_nb <- mean(pred_nb == test_clas2$categoria_precio)
+
+matriz_nb <- table(
+  Real = test_clas2$categoria_precio,
+  Predicho = pred_nb
+)
+
+accuracy_nb
+matriz_nb
+```
+
+```{r metricas-adicionales}
+resultados_nb <- tibble(
+  real = test_clas2$categoria_precio,
+  pred = pred_nb
+)
+
+accuracy(resultados_nb, truth = real, estimate = pred)
+precision(resultados_nb, truth = real, estimate = pred, estimator = "macro")
+recall(resultados_nb, truth = real, estimate = pred, estimator = "macro")
+f_meas(resultados_nb, truth = real, estimate = pred, estimator = "macro")
+```
+
+```{r r resultados-finales}
+salida_nb <- test_clas2 %>%
+  mutate(
+    categoria_real = categoria_precio,
+    categoria_pred = pred_nb
+  ) %>%
+  bind_cols(as_tibble(prob_nb))
+
+head(salida_nb, 15)
+```
+El modelo de clasificación Naive Bayes obtuvo una exactitud de 53.74%, con precisión macro de 57.08%, recall macro de 56.02% y F1 macro de 53.47%. Estos resultados indican un desempeño moderado, pero no sobresaliente. La matriz de confusión muestra que el modelo clasifica mejor las viviendas baratas que las medias y caras. En particular, muchas observaciones de la categoría media fueron clasificadas como baratas, y varias viviendas caras fueron clasificadas como medias. Esto sugiere que el modelo tiene dificultades para separar correctamente las categorías intermedias, probablemente porque existe solapamiento entre las características de los distintos segmentos de precio. En conclusión, el modelo logra capturar parcialmente la estructura de las clases, pero su capacidad predictiva sigue siendo limitada.
+
 

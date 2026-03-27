@@ -933,6 +933,290 @@ head(resultados_nb, 15)</code></pre>
 ## 14        180 Q2             Q1                   107.
 ## 15        153 Q2             Q1                   107.</code></pre>
 </div>
+<div id="haga-un-modelo-de-clasificación-use-la-variable-categórica-que-hizo-con-el-precio-de-las-casas-barata-media-y-cara-como-variable-respuesta." class="section level1">
+<h1>4:Haga un modelo de clasificación, use la variable categórica que
+hizo con el precio de las casas (barata, media y cara) como variable
+respuesta.</h1>
+<pre class="r"><code>listings &lt;- listings %&gt;%
+  clean_names()
+
+if (&quot;price&quot; %in% names(listings)) {
+  listings &lt;- listings %&gt;%
+    mutate(price = parse_money_clean(price))
+}
+
+if (&quot;host_response_rate&quot; %in% names(listings)) {
+  listings &lt;- listings %&gt;%
+    mutate(host_response_rate = parse_percent_clean(host_response_rate))
+}
+
+if (&quot;host_acceptance_rate&quot; %in% names(listings)) {
+  listings &lt;- listings %&gt;%
+    mutate(host_acceptance_rate = parse_percent_clean(host_acceptance_rate))
+}
+
+cols_fecha &lt;- c(&quot;host_since&quot;, &quot;first_review&quot;, &quot;last_review&quot;, &quot;last_scraped&quot;)
+cols_fecha &lt;- cols_fecha[cols_fecha %in% names(listings)]
+
+if (length(cols_fecha) &gt; 0) {
+  listings &lt;- listings %&gt;%
+    mutate(across(all_of(cols_fecha), ~ suppressWarnings(ymd(.x))))
+}
+
+listings &lt;- listings %&gt;%
+  select(where(~ !is.list(.x))) %&gt;%
+  mutate(across(where(is.character), as.factor))
+
+summary(listings$price)</code></pre>
+<pre><code>##    Min. 1st Qu.  Median    Mean 3rd Qu.    Max.    NA&#39;s 
+##     8.0   120.0   193.0   750.5   326.0 50123.0   95502</code></pre>
+<pre class="r"><code>listings &lt;- listings %&gt;%
+  mutate(
+    categoria_precio = case_when(
+      is.na(price) ~ NA_character_,
+      price &lt;= 119 ~ &quot;Barata&quot;,
+      price &gt; 119 &amp; price &lt;= 323 ~ &quot;Media&quot;,
+      price &gt; 323 ~ &quot;Cara&quot;
+    )
+  )
+
+listings$categoria_precio &lt;- factor(
+  listings$categoria_precio,
+  levels = c(&quot;Barata&quot;, &quot;Media&quot;, &quot;Cara&quot;)
+)</code></pre>
+<pre class="r"><code>datos_clas &lt;- listings %&gt;%
+  filter(!is.na(categoria_precio)) %&gt;%
+  select(-any_of(c(&quot;price&quot;, &quot;log_price&quot;, &quot;estimated_revenue_l365d&quot;)))
+
+dim(datos_clas)</code></pre>
+<pre><code>## [1] 76246    79</code></pre>
+<pre class="r"><code>set.seed(123)
+
+split_clas &lt;- initial_split(
+  datos_clas,
+  prop = 0.80,
+  strata = categoria_precio
+)
+
+train_clas &lt;- training(split_clas)
+test_clas  &lt;- testing(split_clas)
+
+dim(train_clas)</code></pre>
+<pre><code>## [1] 60996    79</code></pre>
+<pre class="r"><code>dim(test_clas)</code></pre>
+<pre><code>## [1] 15250    79</code></pre>
+<pre class="r"><code>vars_modelo &lt;- c(
+  &quot;categoria_precio&quot;,
+  &quot;accommodates&quot;,
+  &quot;bathrooms&quot;,
+  &quot;bedrooms&quot;,
+  &quot;beds&quot;,
+  &quot;room_type&quot;
+)
+
+train_clas2 &lt;- train_clas %&gt;%
+  select(any_of(vars_modelo)) %&gt;%
+  drop_na() %&gt;%
+  as.data.frame()
+
+test_clas2 &lt;- test_clas %&gt;%
+  select(any_of(vars_modelo)) %&gt;%
+  drop_na() %&gt;%
+  as.data.frame()
+
+# asegurar que room_type sea factor y tenga los mismos niveles
+train_clas2$room_type &lt;- as.factor(train_clas2$room_type)
+test_clas2$room_type  &lt;- factor(test_clas2$room_type,
+                                levels = levels(train_clas2$room_type))
+
+table(train_clas2$categoria_precio)</code></pre>
+<pre><code>## 
+## Barata  Media   Cara 
+##  15062  30343  15418</code></pre>
+<pre class="r"><code>table(test_clas2$categoria_precio)</code></pre>
+<pre><code>## 
+## Barata  Media   Cara 
+##   3767   7582   3860</code></pre>
+<pre class="r"><code>nb_clas &lt;- naive_bayes(
+  categoria_precio ~ accommodates + bathrooms + bedrooms + beds + room_type,
+  data = train_clas2,
+  laplace = 1
+)
+
+nb_clas</code></pre>
+<pre><code>## 
+## ================================= Naive Bayes ==================================
+## 
+## Call:
+## naive_bayes.formula(formula = categoria_precio ~ accommodates + 
+##     bathrooms + bedrooms + beds + room_type, data = train_clas2, 
+##     laplace = 1)
+## 
+## -------------------------------------------------------------------------------- 
+##  
+## Laplace smoothing: 1
+## 
+## -------------------------------------------------------------------------------- 
+##  
+## A priori probabilities: 
+## 
+##    Barata     Media      Cara 
+## 0.2476366 0.4988738 0.2534896 
+## 
+## -------------------------------------------------------------------------------- 
+##  
+## Tables: 
+## 
+## -------------------------------------------------------------------------------- 
+## :: accommodates (Gaussian) 
+## -------------------------------------------------------------------------------- 
+##             
+## accommodates   Barata    Media     Cara
+##         mean 2.851082 4.600007 7.294331
+##         sd   1.672927 2.251185 3.593111
+## 
+## -------------------------------------------------------------------------------- 
+## :: bathrooms (Gaussian) 
+## -------------------------------------------------------------------------------- 
+##          
+## bathrooms    Barata     Media      Cara
+##      mean 1.1641880 1.4407936 2.4101051
+##      sd   0.5281381 0.6530955 1.3377143
+## 
+## -------------------------------------------------------------------------------- 
+## :: bedrooms (Gaussian) 
+## -------------------------------------------------------------------------------- 
+##         
+## bedrooms   Barata    Media     Cara
+##     mean 1.101580 1.653363 2.824815
+##     sd   0.793146 1.090888 1.743711
+## 
+## -------------------------------------------------------------------------------- 
+## :: beds (Gaussian) 
+## -------------------------------------------------------------------------------- 
+##       
+## beds      Barata     Media      Cara
+##   mean 1.5675209 2.4432324 4.0729667
+##   sd   0.9814978 1.4518843 3.0917403
+## 
+## -------------------------------------------------------------------------------- 
+## :: room_type (Categorical) 
+## -------------------------------------------------------------------------------- 
+##                  
+## room_type               Barata        Media         Cara
+##   Entire home/apt 0.6619540688 0.9373578937 0.9092854364
+##   Hotel room      0.0015929908 0.0034270274 0.0250940215
+##   Private room    0.3259657507 0.0590503180 0.0651666451
+##   Shared room     0.0104871897 0.0001647609 0.0004538970
+## 
+## --------------------------------------------------------------------------------</code></pre>
+<pre class="r"><code>pred_nb &lt;- predict(nb_clas, newdata = test_clas2, type = &quot;class&quot;)
+prob_nb &lt;- predict(nb_clas, newdata = test_clas2, type = &quot;prob&quot;)
+
+head(pred_nb)</code></pre>
+<pre><code>## [1] Barata Media  Barata Barata Barata Barata
+## Levels: Barata Media Cara</code></pre>
+<pre class="r"><code>head(prob_nb)</code></pre>
+<pre><code>##         Barata     Media        Cara
+## [1,] 0.7304379 0.2663240 0.003238141
+## [2,] 0.1117590 0.8661984 0.022042607
+## [3,] 0.7471639 0.2493651 0.003471083
+## [4,] 0.7471639 0.2493651 0.003471083
+## [5,] 0.8186722 0.1776009 0.003726916
+## [6,] 0.5573295 0.4354742 0.007196302</code></pre>
+<pre class="r"><code>accuracy_nb &lt;- mean(pred_nb == test_clas2$categoria_precio)
+
+matriz_nb &lt;- table(
+  Real = test_clas2$categoria_precio,
+  Predicho = pred_nb
+)
+
+accuracy_nb</code></pre>
+<pre><code>## [1] 0.5373792</code></pre>
+<pre class="r"><code>matriz_nb</code></pre>
+<pre><code>##         Predicho
+## Real     Barata Media Cara
+##   Barata   2974   693  100
+##   Media    3311  3585  686
+##   Cara      669  1577 1614</code></pre>
+<pre class="r"><code>resultados_nb &lt;- tibble(
+  real = test_clas2$categoria_precio,
+  pred = pred_nb
+)
+
+accuracy(resultados_nb, truth = real, estimate = pred)</code></pre>
+<pre><code>## # A tibble: 1 × 3
+##   .metric  .estimator .estimate
+##   &lt;chr&gt;    &lt;chr&gt;          &lt;dbl&gt;
+## 1 accuracy multiclass     0.537</code></pre>
+<pre class="r"><code>precision(resultados_nb, truth = real, estimate = pred, estimator = &quot;macro&quot;)</code></pre>
+<pre><code>## # A tibble: 1 × 3
+##   .metric   .estimator .estimate
+##   &lt;chr&gt;     &lt;chr&gt;          &lt;dbl&gt;
+## 1 precision macro          0.571</code></pre>
+<pre class="r"><code>recall(resultados_nb, truth = real, estimate = pred, estimator = &quot;macro&quot;)</code></pre>
+<pre><code>## # A tibble: 1 × 3
+##   .metric .estimator .estimate
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt;
+## 1 recall  macro          0.560</code></pre>
+<pre class="r"><code>f_meas(resultados_nb, truth = real, estimate = pred, estimator = &quot;macro&quot;)</code></pre>
+<pre><code>## # A tibble: 1 × 3
+##   .metric .estimator .estimate
+##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt;
+## 1 f_meas  macro          0.535</code></pre>
+<pre class="r"><code>salida_nb &lt;- test_clas2 %&gt;%
+  mutate(
+    categoria_real = categoria_precio,
+    categoria_pred = pred_nb
+  ) %&gt;%
+  bind_cols(as_tibble(prob_nb))
+
+head(salida_nb, 15)</code></pre>
+<pre><code>##    categoria_precio accommodates bathrooms bedrooms beds       room_type
+## 1             Media            2       1.0        1    2 Entire home/apt
+## 2             Media            6       1.0        1    3 Entire home/apt
+## 3             Media            3       1.0        1    1 Entire home/apt
+## 4            Barata            3       1.0        1    1 Entire home/apt
+## 5            Barata            1       1.0        0    1 Entire home/apt
+## 6             Media            2       1.0        2    2 Entire home/apt
+## 7             Media            2       1.0        1    1 Entire home/apt
+## 8             Media            2       1.0        1    2 Entire home/apt
+## 9             Media            5       1.0        2    2 Entire home/apt
+## 10            Media            8       1.0        3    3 Entire home/apt
+## 11             Cara            8       2.0        3    3 Entire home/apt
+## 12            Media            4       1.0        2    2 Entire home/apt
+## 13            Media            4       2.0        2    2 Entire home/apt
+## 14            Media            4       1.0        1    3 Entire home/apt
+## 15           Barata            8       1.5        2    2    Private room
+##    categoria_real categoria_pred       Barata     Media        Cara
+## 1           Media         Barata 0.7304378723 0.2663240 0.003238141
+## 2           Media          Media 0.1117589864 0.8661984 0.022042607
+## 3           Media         Barata 0.7471638602 0.2493651 0.003471083
+## 4          Barata         Barata 0.7471638602 0.2493651 0.003471083
+## 5          Barata         Barata 0.8186722265 0.1776009 0.003726916
+## 6           Media         Barata 0.5573295009 0.4354742 0.007196302
+## 7           Media         Barata 0.7976826598 0.1994194 0.002897898
+## 8           Media         Barata 0.7304378723 0.2663240 0.003238141
+## 9           Media          Media 0.2458925436 0.7387348 0.015372652
+## 10          Media          Media 0.0014551920 0.8241860 0.174358767
+## 11           Cara          Media 0.0004332182 0.7118492 0.287717628
+## 12          Media          Media 0.3756428566 0.6138640 0.010493107
+## 13          Media          Media 0.1696102111 0.8041284 0.026261365
+## 14          Media          Media 0.3351288462 0.6548964 0.009974801
+## 15         Barata          Media 0.0910864283 0.8285839 0.080329626</code></pre>
+<p>El modelo de clasificación Naive Bayes obtuvo una exactitud de
+53.74%, con precisión macro de 57.08%, recall macro de 56.02% y F1 macro
+de 53.47%. Estos resultados indican un desempeño moderado, pero no
+sobresaliente. La matriz de confusión muestra que el modelo clasifica
+mejor las viviendas baratas que las medias y caras. En particular,
+muchas observaciones de la categoría media fueron clasificadas como
+baratas, y varias viviendas caras fueron clasificadas como medias. Esto
+sugiere que el modelo tiene dificultades para separar correctamente las
+categorías intermedias, probablemente porque existe solapamiento entre
+las características de los distintos segmentos de precio. En conclusión,
+el modelo logra capturar parcialmente la estructura de las clases, pero
+su capacidad predictiva sigue siendo limitada.</p>
+</div>
 
 
 
