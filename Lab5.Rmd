@@ -442,6 +442,8 @@ En el modelo de clasificación, donde la variable respuesta fue la categoría de
 
 En términos generales, se concluye que el algoritmo Naive Bayes fue poco eficiente para predecir el precio exacto, pero tuvo una eficiencia moderada para clasificar las viviendas en categorías de precio. Esto es consistente con la naturaleza del método, ya que Naive Bayes funciona mejor en problemas de clasificación que en problemas de regresión continua.
 
+# 6: Haga un análisis de la eficiencia del modelo de clasificación usando una matriz de confusión. Tenga en cuenta la efectividad, donde el algoritmo se equivocó más, donde se equivocó menos y la importancia que tienen los errores. 
 
+La matriz de confusión muestra que el modelo de clasificación presenta una efectividad moderada, con una exactitud de 53.74%. El algoritmo clasifica mejor las viviendas baratas, ya que acierta la mayoría de esas observaciones, pero presenta mayores dificultades en las categorías media y cara. El error más frecuente fue clasificar viviendas medias como baratas, seguido de clasificar viviendas caras como medias, lo que indica una tendencia del modelo a subestimar la categoría de precio. En contraste, los errores menos frecuentes ocurrieron entre los extremos, especialmente al clasificar viviendas baratas como caras. Esto sugiere que el modelo distingue razonablemente bien los extremos del mercado, pero tiene problemas para separar categorías intermedias. Desde el punto de vista práctico, los errores entre categorías vecinas son menos graves que los errores entre extremos, aunque la tendencia a subvalorar propiedades puede afectar la utilidad del modelo para la toma de decisiones.
 
 
