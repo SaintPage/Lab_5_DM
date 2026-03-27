@@ -1,0 +1,278 @@
+---
+title: "Lab5"
+output: html_document
+date: "2026-03-27"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+# Link de GitHub:
+https://github.com/SaintPage/Lab_5_DM
+
+```{r}
+library(tidyverse)
+library(rsample)
+library(janitor)
+library(lubridate)
+library(naivebayes)
+library(yardstick)
+library(tidyr)
+```
+
+```{r}
+tmp_env <- new.env()
+load("listings.RData", envir = tmp_env)
+
+ls(tmp_env)
+
+objetos <- mget(ls(tmp_env), envir = tmp_env)
+
+listings <- objetos %>%
+  keep(~ is.data.frame(.x)) %>%
+  .[[1]]
+
+dim(listings)
+glimpse(listings)
+```
+
+```{r}
+parse_money_clean <- function(x) {
+  if (is.numeric(x)) return(x)
+  x %>%
+    as.character() %>%
+    str_replace_all("\\$", "") %>%
+    str_replace_all(",", "") %>%
+    str_trim() %>%
+    na_if("") %>%
+    as.numeric()
+}
+
+parse_percent_clean <- function(x) {
+  if (is.numeric(x)) return(x)
+  x %>%
+    as.character() %>%
+    str_replace_all("%", "") %>%
+    str_trim() %>%
+    na_if("") %>%
+    as.numeric()
+}
+
+listings <- listings %>%
+  clean_names()
+
+if ("price" %in% names(listings)) {
+  listings <- listings %>%
+    mutate(price = parse_money_clean(price))
+}
+
+if ("host_response_rate" %in% names(listings)) {
+  listings <- listings %>%
+    mutate(host_response_rate = parse_percent_clean(host_response_rate))
+}
+
+if ("host_acceptance_rate" %in% names(listings)) {
+  listings <- listings %>%
+    mutate(host_acceptance_rate = parse_percent_clean(host_acceptance_rate))
+}
+
+cols_fecha <- c("host_since", "first_review", "last_review", "last_scraped")
+cols_fecha <- cols_fecha[cols_fecha %in% names(listings)]
+
+if (length(cols_fecha) > 0) {
+  listings <- listings %>%
+    mutate(across(all_of(cols_fecha), ~ suppressWarnings(ymd(.x))))
+}
+
+listings <- listings %>%
+  select(where(~ !is.list(.x))) %>%
+  mutate(across(where(is.character), as.factor))
+
+summary(listings$price)
+```
+
+```{r}
+set.seed(123)
+
+split_master <- initial_split(
+  listings,
+  prop = 0.80,
+  strata = price
+)
+
+train_data <- training(split_master)
+test_data  <- testing(split_master)
+
+dim(train_data)
+dim(test_data)
+```
+```{r}
+factor_cols <- names(train_data)[sapply(train_data, is.factor)]
+
+for (col in factor_cols) {
+  if (col %in% names(test_data)) {
+    test_data[[col]] <- factor(test_data[[col]], levels = levels(train_data[[col]]))
+  }
+}
+
+vars_quitar <- intersect(
+  names(train_data),
+  c(
+    "id", "listing_url", "scrape_id", "source", "name", "description",
+    "neighborhood_overview", "picture_url", "host_id", "host_url",
+    "host_name", "host_location", "host_about",
+    "host_thumbnail_url", "host_picture_url",
+    "license", "amenities"
+  )
+)
+
+train_model <- train_data %>% select(-all_of(vars_quitar))
+test_model  <- test_data  %>% select(-all_of(vars_quitar))
+
+names(train_model)
+
+prop_na <- sapply(train_model, function(x) mean(is.na(x)))
+cols_muchos_na <- names(prop_na[prop_na > 0.40])
+cols_muchos_na <- setdiff(cols_muchos_na, "price")
+
+train_model <- train_model %>% select(-all_of(cols_muchos_na))
+test_model  <- test_model  %>% select(-all_of(cols_muchos_na))
+
+train_model <- train_model %>%
+  filter(!is.na(price)) %>%
+  drop_na()
+
+test_model <- test_model %>%
+  filter(!is.na(price)) %>%
+  drop_na()
+
+dim(train_model)
+dim(test_model)
+
+```
+
+
+
+# 1. Elabore un modelo de regresión usando bayes ingenuo (naive bayes)
+```{r}
+
+qs <- quantile(train_model$price, probs = seq(0, 1, by = 0.20), na.rm = TRUE)
+
+breaks <- c(-Inf, unique(qs[2:(length(qs) - 1)]), Inf)
+labels <- paste0("Q", seq_len(length(breaks) - 1))
+
+train_nb <- train_model %>%
+  mutate(price_bin = cut(price,
+                         breaks = breaks,
+                         labels = labels,
+                         include.lowest = TRUE))
+
+test_nb <- test_model %>%
+  mutate(price_bin = cut(price,
+                         breaks = breaks,
+                         labels = labels,
+                         include.lowest = TRUE))
+
+table(train_nb$price_bin)
+table(test_nb$price_bin)
+```
+```{r}
+
+# Quitar columnas constantes
+cols_const <- names(train_nb)[sapply(train_nb, function(x) dplyr::n_distinct(x) <= 1)]
+cols_const <- setdiff(cols_const, c("price", "price_bin"))
+
+train_nb <- train_nb %>% select(-all_of(cols_const))
+test_nb  <- test_nb  %>% select(-all_of(cols_const))
+
+# Convertir fechas a numérico
+train_nb <- train_nb %>%
+  mutate(across(where(~ inherits(.x, "Date")), as.numeric))
+
+test_nb <- test_nb %>%
+  mutate(across(where(~ inherits(.x, "Date")), as.numeric))
+
+# Alinear otra vez factores
+factor_cols2 <- names(train_nb)[sapply(train_nb, is.factor)]
+
+for (col in factor_cols2) {
+  if (col %in% names(test_nb)) {
+    test_nb[[col]] <- factor(test_nb[[col]], levels = levels(train_nb[[col]]))
+  }
+}
+
+glimpse(train_nb)
+```
+
+
+```{r}
+nb_fit <- naive_bayes(
+  price_bin ~ . - price,
+  data = train_nb,
+  laplace = 1
+)
+
+nb_fit
+```
+```{r}
+pred_class <- predict(nb_fit, newdata = test_nb, type = "class")
+pred_prob  <- predict(nb_fit, newdata = test_nb, type = "prob")
+
+head(pred_class)
+head(pred_prob)
+```
+```{r}
+mapa_bins <- train_nb %>%
+  group_by(price_bin) %>%
+  summarise(price_mediana_bin = median(price), .groups = "drop")
+
+mapa_bins
+
+valores_bin <- mapa_bins$price_mediana_bin
+names(valores_bin) <- as.character(mapa_bins$price_bin)
+
+# Valor esperado del precio usando probabilidades posteriores
+pred_price <- as.numeric(pred_prob[, names(valores_bin), drop = FALSE] %*% valores_bin)
+
+head(pred_price)
+```
+
+```{r}
+metricas_reg <- tibble(
+  mae  = mae_vec(test_nb$price, pred_price),
+  rmse = rmse_vec(test_nb$price, pred_price),
+  rsq  = cor(test_nb$price, pred_price)^2
+)
+
+metricas_clase <- tibble(
+  accuracy_bins = mean(pred_class == test_nb$price_bin)
+)
+
+metricas_reg
+metricas_clase
+```
+```{r}
+matriz_confusion <- table(
+  Real = test_nb$price_bin,
+  Predicho = pred_class
+)
+
+matriz_confusion
+```
+```{r}
+resultados_nb <- tibble(
+  price_real = test_nb$price,
+  price_bin_real = test_nb$price_bin,
+  price_bin_pred = pred_class,
+  price_pred = pred_price
+)
+
+head(resultados_nb, 15)
+```
+
+
