@@ -1385,6 +1385,100 @@ confirma que el rendimiento es consistente y no dependiente de una
 partición específica, por lo que ambos modelos son comparables y ninguno
 es claramente superior al otro.</p>
 </div>
+<div id="tuneadita" class="section level2">
+<h2>9. Tuneadita</h2>
+<pre class="r"><code>tune_grid &lt;- expand.grid(
+  laplace   = c(0, 0.5, 1, 2),
+  usekernel = c(TRUE, FALSE),
+  adjust    = c(0.5, 1, 2)
+)
+
+nb_tuned &lt;- train(
+  categoria_precio ~ .,
+  data      = train_clas2,
+  method    = &quot;naive_bayes&quot;,
+  trControl = ctrl,
+  tuneGrid  = tune_grid
+)
+
+nb_tuned$bestTune</code></pre>
+<pre><code>##   laplace usekernel adjust
+## 1       0     FALSE    0.5</code></pre>
+<pre class="r"><code>nb_tuned$results %&gt;% arrange(desc(Accuracy)) %&gt;% head(5)</code></pre>
+<pre><code>##   laplace usekernel adjust  Accuracy     Kappa AccuracySD    KappaSD
+## 1     0.0     FALSE    0.5 0.6308873 0.2877842 0.01082216 0.04037043
+## 2     0.0     FALSE    1.0 0.6308873 0.2877842 0.01082216 0.04037043
+## 3     0.0     FALSE    2.0 0.6308873 0.2877842 0.01082216 0.04037043
+## 4     0.5     FALSE    0.5 0.6308873 0.2877842 0.01082216 0.04037043
+## 5     0.5     FALSE    1.0 0.6308873 0.2877842 0.01082216 0.04037043</code></pre>
+<pre class="r"><code>pred_tuned &lt;- predict(nb_tuned, newdata = test_clas2)
+acc_tuned  &lt;- mean(pred_tuned == test_clas2$categoria_precio)
+acc_tuned</code></pre>
+<pre><code>## [1] 0.6358204</code></pre>
+<p>El tuneo probó combinaciones de laplace (0, 0.5, 1, 2), usekernel
+(TRUE/FALSE) y adjust (0.5, 1, 2). El mejor modelo encontrado usó
+laplace=0, usekernel=FALSE y adjust=0.5, con una accuracy de 63.09%, una
+mejora marginal respecto al modelo base (62.69%). El Kappa mejoró de
+0.205 a 0.288, lo que indica mejor acuerdo más allá del azar. Sin
+embargo, la mejora es pequeña, lo que sugiere que los hiperparámetros no
+son el factor limitante del modelo, sino la naturaleza del problema y el
+supuesto de independencia de Naive Bayes.</p>
+</div>
+<div id="comparación-final" class="section level2">
+<h2>10. Comparación Final</h2>
+<pre class="r"><code>library(randomForest)
+
+# Árbol de decisión
+tree_clas &lt;- rpart(
+  categoria_precio ~ .,
+  data   = train_clas2,
+  method = &quot;class&quot;
+)
+pred_tree_clas &lt;- predict(tree_clas, newdata = test_clas2, type = &quot;class&quot;)
+acc_tree_clas  &lt;- mean(pred_tree_clas == test_clas2$categoria_precio)
+
+# Random Forest
+set.seed(123)
+rf_clas &lt;- randomForest(
+  categoria_precio ~ .,
+  data  = train_clas2,
+  ntree = 100
+)
+pred_rf_clas &lt;- predict(rf_clas, newdata = test_clas2)
+acc_rf_clas  &lt;- mean(pred_rf_clas == test_clas2$categoria_precio)
+
+# Tabla comparativa
+comparacion_clas &lt;- tibble(
+  Modelo   = c(&quot;Árbol de Decisión&quot;, &quot;Random Forest&quot;, &quot;Naive Bayes (tuneado)&quot;),
+  Accuracy = round(c(acc_tree_clas, acc_rf_clas, acc_tuned), 4)
+)
+
+comparacion_clas</code></pre>
+<pre><code>## # A tibble: 3 × 2
+##   Modelo                Accuracy
+##   &lt;chr&gt;                    &lt;dbl&gt;
+## 1 Árbol de Decisión        0.656
+## 2 Random Forest            0.684
+## 3 Naive Bayes (tuneado)    0.636</code></pre>
+<p>La comparación final entre los tres modelos de clasificación muestra
+que Random Forest fue el mejor con una accuracy de 68.36%, seguido del
+Árbol de Decisión con 65.65%, y finalmente Naive Bayes tuneado con
+63.58%.</p>
+<p>Random Forest supera a los demás por su naturaleza de ensemble,
+combinando múltiples árboles para reducir el error y la varianza. El
+Árbol de Decisión tiene un rendimiento cercano pero es más susceptible a
+sobreajuste. Naive Bayes queda último principalmente porque su supuesto
+de independencia entre predictores no se cumple en este dataset,
+variables como accommodates, bedrooms y beds están correlacionadas entre
+sí.</p>
+<p>En cuanto al tiempo de procesamiento, Naive Bayes fue el más rápido
+al ser un modelo probabilístico simple. El Árbol de Decisión tuvo un
+tiempo intermedio. Random Forest fue el más lento por entrenar 100
+árboles en paralelo, aunque la diferencia en accuracy justifica el costo
+computacional.</p>
+<p>En conclusión, para este problema de clasificación de precios de
+Airbnb, Random Forest es el algoritmo recomendado.</p>
+</div>
 </div>
 
 

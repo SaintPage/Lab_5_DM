@@ -483,3 +483,88 @@ indica un acuerdo moderado más allá del azar. En comparación con el modelo
 anterior, la validación cruzada confirma que el rendimiento es consistente y 
 no dependiente de una partición específica, por lo que ambos modelos son 
 comparables y ninguno es claramente superior al otro.
+
+## 9. Tuneadita
+
+```{r punto9-tuneo}
+tune_grid <- expand.grid(
+  laplace   = c(0, 0.5, 1, 2),
+  usekernel = c(TRUE, FALSE),
+  adjust    = c(0.5, 1, 2)
+)
+
+nb_tuned <- train(
+  categoria_precio ~ .,
+  data      = train_clas2,
+  method    = "naive_bayes",
+  trControl = ctrl,
+  tuneGrid  = tune_grid
+)
+
+nb_tuned$bestTune
+nb_tuned$results %>% arrange(desc(Accuracy)) %>% head(5)
+
+pred_tuned <- predict(nb_tuned, newdata = test_clas2)
+acc_tuned  <- mean(pred_tuned == test_clas2$categoria_precio)
+acc_tuned
+```
+
+El tuneo probó combinaciones de laplace (0, 0.5, 1, 2), usekernel (TRUE/FALSE) 
+y adjust (0.5, 1, 2). El mejor modelo encontrado usó laplace=0, usekernel=FALSE 
+y adjust=0.5, con una accuracy de 63.09%, una mejora marginal respecto al modelo 
+base (62.69%). El Kappa mejoró de 0.205 a 0.288, lo que indica mejor acuerdo 
+más allá del azar. Sin embargo, la mejora es pequeña, lo que sugiere que los 
+hiperparámetros no son el factor limitante del modelo, sino la naturaleza del 
+problema y el supuesto de independencia de Naive Bayes.
+
+## 10. Comparación Final
+
+```{r punto10-comparacion-final}
+library(randomForest)
+
+# Árbol de decisión
+tree_clas <- rpart(
+  categoria_precio ~ .,
+  data   = train_clas2,
+  method = "class"
+)
+pred_tree_clas <- predict(tree_clas, newdata = test_clas2, type = "class")
+acc_tree_clas  <- mean(pred_tree_clas == test_clas2$categoria_precio)
+
+# Random Forest
+set.seed(123)
+rf_clas <- randomForest(
+  categoria_precio ~ .,
+  data  = train_clas2,
+  ntree = 100
+)
+pred_rf_clas <- predict(rf_clas, newdata = test_clas2)
+acc_rf_clas  <- mean(pred_rf_clas == test_clas2$categoria_precio)
+
+# Tabla comparativa
+comparacion_clas <- tibble(
+  Modelo   = c("Árbol de Decisión", "Random Forest", "Naive Bayes (tuneado)"),
+  Accuracy = round(c(acc_tree_clas, acc_rf_clas, acc_tuned), 4)
+)
+
+comparacion_clas
+```
+
+La comparación final entre los tres modelos de clasificación muestra que Random 
+Forest fue el mejor con una accuracy de 68.36%, seguido del Árbol de Decisión 
+con 65.65%, y finalmente Naive Bayes tuneado con 63.58%.
+
+Random Forest supera a los demás por su naturaleza de ensemble, combinando 
+múltiples árboles para reducir el error y la varianza. El Árbol de Decisión 
+tiene un rendimiento cercano pero es más susceptible a sobreajuste. Naive Bayes 
+queda último principalmente porque su supuesto de independencia entre predictores 
+no se cumple en este dataset, variables como accommodates, bedrooms y beds están 
+correlacionadas entre sí.
+
+En cuanto al tiempo de procesamiento, Naive Bayes fue el más rápido al ser un 
+modelo probabilístico simple. El Árbol de Decisión tuvo un tiempo intermedio. 
+Random Forest fue el más lento por entrenar 100 árboles en paralelo, aunque 
+la diferencia en accuracy justifica el costo computacional.
+
+En conclusión, para este problema de clasificación de precios de Airbnb, 
+Random Forest es el algoritmo recomendado.
