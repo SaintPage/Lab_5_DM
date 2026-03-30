@@ -396,7 +396,7 @@ nb_clas <- naive_bayes(
 nb_clas
 ```
 
-
+## 5. Eficiencia
 
 ```{r punto5-eficiencia}
 pred_nb <- predict(nb_clas, newdata = test_clas2, type = "class")
@@ -413,6 +413,7 @@ yardstick::recall(resultados_clas,    truth = real, estimate = pred, estimator =
 yardstick::f_meas(resultados_clas,    truth = real, estimate = pred, estimator = "macro")
 ```
 
+## 6. Matriz confusion
 
 ```{r punto6-matriz-confusion}
 matriz_nb <- table(
@@ -422,3 +423,63 @@ matriz_nb <- table(
 
 matriz_nb
 ```
+
+La matriz de confusión muestra una efectividad general moderada del 55%. El modelo 
+clasifica mejor la categoría Media, acertando 2837 casos, lo cual se explica por ser 
+la clase con más observaciones en el dataset. Sin embargo, presenta serias dificultades 
+con la categoría Barata, donde solo acierta 219 casos y clasifica incorrectamente 624 
+como Media. La categoría Cara también sufre, con 927 casos mal clasificados como Media.
+
+El error más frecuente es la confusión hacia la categoría Media, lo que indica un sesgo 
+del modelo hacia la clase mayoritaria. Los errores menos frecuentes ocurren entre los 
+extremos: solo 23 Baratas clasificadas como Caras y 10 Caras como Baratas, lo cual es 
+positivo ya que estos son los errores más costosos para el negocio, pues implicarían 
+recomendar un precio completamente alejado de la realidad. En conclusión, el modelo 
+distingue bien los extremos entre sí, pero tiene problemas para separar correctamente 
+las propiedades de precio intermedio de las baratas y caras.
+
+## 7. Sobreajuste
+
+```{r punto7-sobreajuste}
+pred_train <- predict(nb_clas, newdata = train_clas2, type = "class")
+acc_train  <- mean(pred_train == train_clas2$categoria_precio)
+acc_test   <- mean(pred_nb    == test_clas2$categoria_precio)
+
+tibble(
+  Conjunto = c("Entrenamiento", "Prueba"),
+  Accuracy = round(c(acc_train, acc_test), 4)
+)
+```
+
+La diferencia entre la accuracy de entrenamiento teniendo 65.96% y prueba con 65.67% es 
+mínima, apenas 0.29%. Esto indica que el modelo no está sobreajustado. Naive Bayes 
+raramente sobreajusta por su naturaleza probabilística simple, y estos resultados 
+lo confirman. El modelo generaliza bien a datos nuevos.
+
+## 8.Validación Cruzada
+
+```{r punto8-validacion-cruzada}
+library(caret)
+
+ctrl <- trainControl(method = "cv", number = 10)
+
+nb_cv <- train(
+  categoria_precio ~ .,
+  data      = train_clas2,
+  method    = "naive_bayes",
+  trControl = ctrl,
+  tuneGrid  = expand.grid(laplace = 1, usekernel = TRUE, adjust = 1)
+)
+
+nb_cv
+nb_cv$results
+```
+
+La validación cruzada con 10 folds obtuvo una accuracy promedio de 62.69%, 
+ligeramente superior a la del modelo simple (65.67% en prueba pero entrenado 
+con más datos). La desviación estándar de 0.0075 indica que el modelo es 
+estable entre los distintos folds, sin grandes variaciones. El Kappa de 0.205 
+indica un acuerdo moderado más allá del azar. En comparación con el modelo 
+anterior, la validación cruzada confirma que el rendimiento es consistente y 
+no dependiente de una partición específica, por lo que ambos modelos son 
+comparables y ninguno es claramente superior al otro.

@@ -1256,6 +1256,8 @@ nb_clas</code></pre>
 ## # ... and 2 more tables
 ## 
 ## --------------------------------------------------------------------------------</code></pre>
+<div id="eficiencia" class="section level2">
+<h2>5. Eficiencia</h2>
 <pre class="r"><code>pred_nb &lt;- predict(nb_clas, newdata = test_clas2, type = &quot;class&quot;)
 prob_nb &lt;- predict(nb_clas, newdata = test_clas2, type = &quot;prob&quot;)
 
@@ -1284,6 +1286,9 @@ yardstick::accuracy(resultados_clas,  truth = real, estimate = pred)</code></pre
 ##   .metric .estimator .estimate
 ##   &lt;chr&gt;   &lt;chr&gt;          &lt;dbl&gt;
 ## 1 f_meas  macro          0.553</code></pre>
+</div>
+<div id="matriz-confusion" class="section level2">
+<h2>6. Matriz confusion</h2>
 <pre class="r"><code>matriz_nb &lt;- table(
   Real     = test_clas2$categoria_precio,
   Predicho = pred_nb
@@ -1295,6 +1300,91 @@ matriz_nb</code></pre>
 ##   Barata    219   624   23
 ##   Media     109  2837  318
 ##   Cara       10   927  790</code></pre>
+<p>La matriz de confusión muestra una efectividad general moderada del
+55%. El modelo clasifica mejor la categoría Media, acertando 2837 casos,
+lo cual se explica por ser la clase con más observaciones en el dataset.
+Sin embargo, presenta serias dificultades con la categoría Barata, donde
+solo acierta 219 casos y clasifica incorrectamente 624 como Media. La
+categoría Cara también sufre, con 927 casos mal clasificados como
+Media.</p>
+<p>El error más frecuente es la confusión hacia la categoría Media, lo
+que indica un sesgo del modelo hacia la clase mayoritaria. Los errores
+menos frecuentes ocurren entre los extremos: solo 23 Baratas
+clasificadas como Caras y 10 Caras como Baratas, lo cual es positivo ya
+que estos son los errores más costosos para el negocio, pues implicarían
+recomendar un precio completamente alejado de la realidad. En
+conclusión, el modelo distingue bien los extremos entre sí, pero tiene
+problemas para separar correctamente las propiedades de precio
+intermedio de las baratas y caras.</p>
+</div>
+<div id="sobreajuste" class="section level2">
+<h2>7. Sobreajuste</h2>
+<pre class="r"><code>pred_train &lt;- predict(nb_clas, newdata = train_clas2, type = &quot;class&quot;)
+acc_train  &lt;- mean(pred_train == train_clas2$categoria_precio)
+acc_test   &lt;- mean(pred_nb    == test_clas2$categoria_precio)
+
+tibble(
+  Conjunto = c(&quot;Entrenamiento&quot;, &quot;Prueba&quot;),
+  Accuracy = round(c(acc_train, acc_test), 4)
+)</code></pre>
+<pre><code>## # A tibble: 2 × 2
+##   Conjunto      Accuracy
+##   &lt;chr&gt;            &lt;dbl&gt;
+## 1 Entrenamiento    0.660
+## 2 Prueba           0.657</code></pre>
+<p>La diferencia entre la accuracy de entrenamiento teniendo 65.96% y
+prueba con 65.67% es mínima, apenas 0.29%. Esto indica que el modelo no
+está sobreajustado. Naive Bayes raramente sobreajusta por su naturaleza
+probabilística simple, y estos resultados lo confirman. El modelo
+generaliza bien a datos nuevos.</p>
+</div>
+<div id="validación-cruzada" class="section level2">
+<h2>8.Validación Cruzada</h2>
+<pre class="r"><code>library(caret)
+
+ctrl &lt;- trainControl(method = &quot;cv&quot;, number = 10)
+
+nb_cv &lt;- train(
+  categoria_precio ~ .,
+  data      = train_clas2,
+  method    = &quot;naive_bayes&quot;,
+  trControl = ctrl,
+  tuneGrid  = expand.grid(laplace = 1, usekernel = TRUE, adjust = 1)
+)
+
+nb_cv</code></pre>
+<pre><code>## Naive Bayes 
+## 
+## 23421 samples
+##     7 predictor
+##     3 classes: &#39;Barata&#39;, &#39;Media&#39;, &#39;Cara&#39; 
+## 
+## No pre-processing
+## Resampling: Cross-Validated (10 fold) 
+## Summary of sample sizes: 21079, 21080, 21079, 21079, 21079, 21078, ... 
+## Resampling results:
+## 
+##   Accuracy   Kappa    
+##   0.6268726  0.2049179
+## 
+## Tuning parameter &#39;laplace&#39; was held constant at a value of 1
+## Tuning
+##  parameter &#39;usekernel&#39; was held constant at a value of TRUE
+## Tuning
+##  parameter &#39;adjust&#39; was held constant at a value of 1</code></pre>
+<pre class="r"><code>nb_cv$results</code></pre>
+<pre><code>##   laplace usekernel adjust  Accuracy     Kappa  AccuracySD    KappaSD
+## 1       1      TRUE      1 0.6268726 0.2049179 0.007466825 0.02335772</code></pre>
+<p>La validación cruzada con 10 folds obtuvo una accuracy promedio de
+62.69%, ligeramente superior a la del modelo simple (65.67% en prueba
+pero entrenado con más datos). La desviación estándar de 0.0075 indica
+que el modelo es estable entre los distintos folds, sin grandes
+variaciones. El Kappa de 0.205 indica un acuerdo moderado más allá del
+azar. En comparación con el modelo anterior, la validación cruzada
+confirma que el rendimiento es consistente y no dependiente de una
+partición específica, por lo que ambos modelos son comparables y ninguno
+es claramente superior al otro.</p>
+</div>
 </div>
 
 
