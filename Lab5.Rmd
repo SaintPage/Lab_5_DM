@@ -275,175 +275,150 @@ resultados_nb <- tibble(
 head(resultados_nb, 15)
 ```
 
-# 4:Haga un modelo de clasificación, use la variable categórica que hizo con el precio de las casas (barata, media y cara) como variable respuesta. 
+```{r arreglar-factores}
+# Alinear todos los factores entre train y test
+factor_cols_model <- names(train_model)[sapply(train_model, is.factor)]
 
-```{r}
-listings <- listings %>%
-  clean_names()
-
-if ("price" %in% names(listings)) {
-  listings <- listings %>%
-    mutate(price = parse_money_clean(price))
+for (col in factor_cols_model) {
+  if (col %in% names(test_model)) {
+    test_model[[col]] <- factor(test_model[[col]], 
+                                levels = levels(train_model[[col]]))
+  }
 }
-
-if ("host_response_rate" %in% names(listings)) {
-  listings <- listings %>%
-    mutate(host_response_rate = parse_percent_clean(host_response_rate))
-}
-
-if ("host_acceptance_rate" %in% names(listings)) {
-  listings <- listings %>%
-    mutate(host_acceptance_rate = parse_percent_clean(host_acceptance_rate))
-}
-
-cols_fecha <- c("host_since", "first_review", "last_review", "last_scraped")
-cols_fecha <- cols_fecha[cols_fecha %in% names(listings)]
-
-if (length(cols_fecha) > 0) {
-  listings <- listings %>%
-    mutate(across(all_of(cols_fecha), ~ suppressWarnings(ymd(.x))))
-}
-
-listings <- listings %>%
-  select(where(~ !is.list(.x))) %>%
-  mutate(across(where(is.character), as.factor))
-
-summary(listings$price)
 ```
-```{r categorías precio}
-listings <- listings %>%
+
+# 3. Comparación de modelos
+
+```{r comparacion-regresion}
+library(rpart)
+library(Metrics)
+
+cols_problematicas <- c("host_neighbourhood", "host_verifications", 
+                        "host_location", "bathrooms_text")
+
+train_reg <- train_model %>% 
+  select(-any_of(cols_problematicas))
+
+test_reg <- test_model %>% 
+  select(-any_of(cols_problematicas))
+
+# Alinear factores
+for (col in names(train_reg)[sapply(train_reg, is.factor)]) {
+  if (col %in% names(test_reg)) {
+    test_reg[[col]] <- factor(test_reg[[col]], 
+                              levels = levels(train_reg[[col]]))
+  }
+}
+
+# Regresión Lineal
+lm_fit <- lm(price ~ ., data = train_reg)
+pred_lm <- predict(lm_fit, newdata = test_reg)
+mae_lm  <- mae(test_reg$price, pred_lm)
+rmse_lm <- rmse(test_reg$price, pred_lm)
+rsq_lm  <- cor(test_reg$price, pred_lm)^2
+
+# Árbol de Regresión
+tree_fit <- rpart(price ~ ., data = train_reg, method = "anova")
+pred_tree <- predict(tree_fit, newdata = test_reg)
+mae_tree  <- mae(test_reg$price, pred_tree)
+rmse_tree <- rmse(test_reg$price, pred_tree)
+rsq_tree  <- cor(test_reg$price, pred_tree)^2
+
+# Naive Bayes (ya calculado)
+mae_nb  <- metricas_reg$mae
+rmse_nb <- metricas_reg$rmse
+rsq_nb  <- metricas_reg$rsq
+
+# Tabla comparativa
+comparacion_reg <- tibble(
+  Modelo = c("Regresión Lineal", "Árbol de Regresión", "Naive Bayes"),
+  MAE    = round(c(mae_lm, mae_tree, mae_nb), 2),
+  RMSE   = round(c(rmse_lm, rmse_tree, rmse_nb), 2),
+  R2     = round(c(rsq_lm, rsq_tree, rsq_nb), 4)
+)
+
+comparacion_reg
+```
+
+El modelo con mejor desempeño para predecir el precio fue el Árbol de Regresión, con MAE de 269.67, RMSE de 1190.68 y R² de 0.7282, lo que indica que explica el 72.8% de la variabilidad del precio. La Regresión Lineal tuvo un desempeño aceptable con R² de 0.4183, aunque con mayor error. Naive Bayes fue el peor modelo para esta tarea, con R² de apenas 0.0067, confirmando que este algoritmo no es adecuado para predecir variables continuas, ya que no modela relaciones directas entre predictores y precio. Para estimación de precios, el Árbol de Regresión es la mejor opción hasta el momento.
+
+# 4.Modelo de clasificación
+
+```{r punto4-modelo-clasificacion}
+library(naivebayes)
+library(yardstick)
+
+listings_clas <- train_model %>%
+  bind_rows(test_model) %>%
   mutate(
     categoria_precio = case_when(
-      is.na(price) ~ NA_character_,
-      price <= 119 ~ "Barata",
+      price <= 119               ~ "Barata",
       price > 119 & price <= 323 ~ "Media",
-      price > 323 ~ "Cara"
-    )
-  )
+      price > 323                ~ "Cara"
+    ),
+    categoria_precio = factor(categoria_precio, levels = c("Barata","Media","Cara"))
+  ) %>%
+  filter(!is.na(categoria_precio))
 
-listings$categoria_precio <- factor(
-  listings$categoria_precio,
-  levels = c("Barata", "Media", "Cara")
-)
-```
-
-```{r}
-datos_clas <- listings %>%
-  filter(!is.na(categoria_precio)) %>%
-  select(-any_of(c("price", "log_price", "estimated_revenue_l365d")))
-
-dim(datos_clas)
-```
-```{r}
 set.seed(123)
-
-split_clas <- initial_split(
-  datos_clas,
-  prop = 0.80,
-  strata = categoria_precio
-)
-
+split_clas <- initial_split(listings_clas, prop = 0.80, strata = categoria_precio)
 train_clas <- training(split_clas)
 test_clas  <- testing(split_clas)
 
-dim(train_clas)
-dim(test_clas)
-```
-
-```{r seleccionar-predictores}
-vars_modelo <- c(
-  "categoria_precio",
-  "accommodates",
-  "bathrooms",
-  "bedrooms",
-  "beds",
-  "room_type"
+vars_clas <- c(
+  "categoria_precio", "accommodates", "room_type",
+  "review_scores_rating", "number_of_reviews",
+  "host_is_superhost", "instant_bookable", "availability_365"
 )
 
 train_clas2 <- train_clas %>%
-  select(any_of(vars_modelo)) %>%
+  select(any_of(vars_clas)) %>%
   drop_na() %>%
   as.data.frame()
 
 test_clas2 <- test_clas %>%
-  select(any_of(vars_modelo)) %>%
+  select(any_of(vars_clas)) %>%
   drop_na() %>%
   as.data.frame()
 
-# asegurar que room_type sea factor y tenga los mismos niveles
-train_clas2$room_type <- as.factor(train_clas2$room_type)
-test_clas2$room_type  <- factor(test_clas2$room_type,
-                                levels = levels(train_clas2$room_type))
+for (col in names(train_clas2)[sapply(train_clas2, is.factor)]) {
+  if (col %in% names(test_clas2))
+    test_clas2[[col]] <- factor(test_clas2[[col]], levels = levels(train_clas2[[col]]))
+}
 
-table(train_clas2$categoria_precio)
-table(test_clas2$categoria_precio)
-```
-
-```{r entrenar-naive-bayes-clas}
 nb_clas <- naive_bayes(
-  categoria_precio ~ accommodates + bathrooms + bedrooms + beds + room_type,
-  data = train_clas2,
-  laplace = 1
+  categoria_precio ~ .,
+  data      = train_clas2,
+  laplace   = 1,
+  usekernel = TRUE
 )
 
 nb_clas
 ```
 
-```{r}
+
+
+```{r punto5-eficiencia}
 pred_nb <- predict(nb_clas, newdata = test_clas2, type = "class")
 prob_nb <- predict(nb_clas, newdata = test_clas2, type = "prob")
 
-head(pred_nb)
-head(prob_nb)
-```
-```{r metricas-clasificacion}
-accuracy_nb <- mean(pred_nb == test_clas2$categoria_precio)
-
-matriz_nb <- table(
-  Real = test_clas2$categoria_precio,
-  Predicho = pred_nb
-)
-
-accuracy_nb
-matriz_nb
-```
-
-```{r metricas-adicionales}
-resultados_nb <- tibble(
+resultados_clas <- tibble(
   real = test_clas2$categoria_precio,
   pred = pred_nb
 )
 
-accuracy(resultados_nb, truth = real, estimate = pred)
-precision(resultados_nb, truth = real, estimate = pred, estimator = "macro")
-recall(resultados_nb, truth = real, estimate = pred, estimator = "macro")
-f_meas(resultados_nb, truth = real, estimate = pred, estimator = "macro")
+yardstick::accuracy(resultados_clas,  truth = real, estimate = pred)
+yardstick::precision(resultados_clas, truth = real, estimate = pred, estimator = "macro")
+yardstick::recall(resultados_clas,    truth = real, estimate = pred, estimator = "macro")
+yardstick::f_meas(resultados_clas,    truth = real, estimate = pred, estimator = "macro")
 ```
 
-```{r r resultados-finales}
-salida_nb <- test_clas2 %>%
-  mutate(
-    categoria_real = categoria_precio,
-    categoria_pred = pred_nb
-  ) %>%
-  bind_cols(as_tibble(prob_nb))
 
-head(salida_nb, 15)
+```{r punto6-matriz-confusion}
+matriz_nb <- table(
+  Real     = test_clas2$categoria_precio,
+  Predicho = pred_nb
+)
+
+matriz_nb
 ```
-El modelo de clasificación Naive Bayes obtuvo una exactitud de 53.74%, con precisión macro de 57.08%, recall macro de 56.02% y F1 macro de 53.47%. Estos resultados indican un desempeño moderado, pero no sobresaliente. La matriz de confusión muestra que el modelo clasifica mejor las viviendas baratas que las medias y caras. En particular, muchas observaciones de la categoría media fueron clasificadas como baratas, y varias viviendas caras fueron clasificadas como medias. Esto sugiere que el modelo tiene dificultades para separar correctamente las categorías intermedias, probablemente porque existe solapamiento entre las características de los distintos segmentos de precio. En conclusión, el modelo logra capturar parcialmente la estructura de las clases, pero su capacidad predictiva sigue siendo limitada.
-
-# 5:Utilice los modelos con el conjunto de prueba y determine la eficiencia del algoritmo para predecir y clasificar. 
-
-Para determinar la eficiencia del algoritmo en el conjunto de prueba, se evaluaron por separado el modelo de predicción y el modelo de clasificación.
-
-En el caso del modelo de predicción del precio, el desempeño fue bajo. Las métricas obtenidas fueron MAE = 362, RMSE = 2240 y R^2 =0.00666. Esto indica que el error promedio absoluto fue de 362 unidades monetarias y que el modelo prácticamente no explicó la variabilidad del precio. Además, la exactitud por rangos fue de 0.396, lo que confirma que el algoritmo tuvo dificultades para ubicar correctamente las propiedades en los distintos niveles de precio. En consecuencia, la eficiencia del algoritmo para predecir el valor exacto del alquiler fue baja.
-
-En el modelo de clasificación, donde la variable respuesta fue la categoría de precio (Barata, Media, Cara), el desempeño fue mejor que en predicción, aunque sigue siendo moderado. En el conjunto de prueba se obtuvo una accuracy de 0.5374, una precision macro de 0.5708, un recall macro de 0.5602 y una F1 macro de 0.5347. Esto significa que el modelo clasificó correctamente alrededor del 53.7% de las observaciones. La matriz de confusión mostró que el algoritmo identificó mejor la categoría Barata, mientras que presentó más errores en las categorías Media y Cara, especialmente confundiendo viviendas medias con baratas y viviendas caras con medias.
-
-En términos generales, se concluye que el algoritmo Naive Bayes fue poco eficiente para predecir el precio exacto, pero tuvo una eficiencia moderada para clasificar las viviendas en categorías de precio. Esto es consistente con la naturaleza del método, ya que Naive Bayes funciona mejor en problemas de clasificación que en problemas de regresión continua.
-
-# 6: Haga un análisis de la eficiencia del modelo de clasificación usando una matriz de confusión. Tenga en cuenta la efectividad, donde el algoritmo se equivocó más, donde se equivocó menos y la importancia que tienen los errores. 
-
-La matriz de confusión muestra que el modelo de clasificación presenta una efectividad moderada, con una exactitud de 53.74%. El algoritmo clasifica mejor las viviendas baratas, ya que acierta la mayoría de esas observaciones, pero presenta mayores dificultades en las categorías media y cara. El error más frecuente fue clasificar viviendas medias como baratas, seguido de clasificar viviendas caras como medias, lo que indica una tendencia del modelo a subestimar la categoría de precio. En contraste, los errores menos frecuentes ocurrieron entre los extremos, especialmente al clasificar viviendas baratas como caras. Esto sugiere que el modelo distingue razonablemente bien los extremos del mercado, pero tiene problemas para separar categorías intermedias. Desde el punto de vista práctico, los errores entre categorías vecinas son menos graves que los errores entre extremos, aunque la tendencia a subvalorar propiedades puede afectar la utilidad del modelo para la toma de decisiones.
-
-
